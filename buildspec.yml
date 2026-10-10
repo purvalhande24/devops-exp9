@@ -1,0 +1,50 @@
+version: 0.2
+
+env:
+  variables:
+    AWS_DEFAULT_REGION: "ap-south-1"
+
+phases:
+  install:
+    runtime-versions:
+      python: 3.11
+    commands:
+      - echo "Installing dependencies..."
+      - python -m pip install --upgrade pip
+      - python -m pip install flake8
+
+  pre_build:
+    commands:
+      - echo "Running lint checks..."
+      - flake8 app.py test_app.py --ignore=E501
+      - echo "Lint checks completed successfully!"
+
+      - echo "Running unit tests..."
+      - python -m unittest -v test_app
+
+  build:
+    commands:
+      - echo "Building Docker image..."
+      - docker build -t devops-exp9 .
+      - echo "Docker image built successfully!"
+
+  post_build:
+    commands:
+      - echo "Checking whether tests and build completed successfully..."
+
+      - |
+        if [ "$CODEBUILD_BUILD_SUCCEEDING" != "1" ]; then
+          echo "Build failed. The Docker image will not be pushed."
+          exit 1
+        fi
+
+      - echo "Logging in to Amazon ECR..."
+      - aws ecr get-login-password --region "$AWS_DEFAULT_REGION" | docker login --username AWS --password-stdin "$ECR_URI"
+
+      - echo "Tagging Docker image with commit ID..."
+      - docker tag devops-exp9:latest "$ECR_URI:$CODEBUILD_RESOLVED_SOURCE_VERSION"
+
+      - echo "Pushing Docker image to ECR..."
+      - docker push "$ECR_URI:$CODEBUILD_RESOLVED_SOURCE_VERSION"
+
+      - echo "Docker image pushed successfully!"
